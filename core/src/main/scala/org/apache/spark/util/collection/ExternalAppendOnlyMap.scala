@@ -91,6 +91,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   private var insertCount = 0
   private var spillCount = 0
 
+  private var prevSize = -1L
+
   def insert(key: K, value: V) {
     insertCount += 1
     val update: (Boolean, C) => C = (hadVal, oldVal) => {
@@ -100,9 +102,12 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     if (insertCount % updateThresholdInterval == 1) {
       updateSpillThreshold()
     }
-    if (currentMap.estimateSize() > spillThreshold) {
+    val newSize = currentMap.estimateSize()
+    if (newSize > spillThreshold) {
+      logWarning("In-memory map size jumped from %s to %s!".format(prevSize, newSize))
       spill()
     }
+    prevSize = newSize
   }
 
   // TODO: differentiate ShuffleMapTask's from ResultTask's
@@ -127,6 +132,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       writer.commit()
     } finally {
       // Partial failures cannot be tolerated; do not revert partial writes
+      logWarning("*** The new spilled file is %d bytes long!".format(writer.bytesWritten))
       writer.close()
     }
     currentMap = new SizeTrackingAppendOnlyMap[K, C]

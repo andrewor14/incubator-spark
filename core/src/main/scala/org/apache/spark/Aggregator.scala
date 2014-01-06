@@ -18,6 +18,7 @@
 package org.apache.spark
 
 import org.apache.spark.util.collection.{AppendOnlyMap, ExternalAppendOnlyMap}
+import org.apache.spark.util.SizeEstimator
 
 /**
  * A set of functions used to aggregate data.
@@ -29,7 +30,7 @@ import org.apache.spark.util.collection.{AppendOnlyMap, ExternalAppendOnlyMap}
 case class Aggregator[K, V, C] (
     createCombiner: V => C,
     mergeValue: (C, V) => C,
-    mergeCombiners: (C, C) => C) {
+    mergeCombiners: (C, C) => C) extends Logging{
 
   private val sparkConf = new SparkConf()
   private val externalSorting = sparkConf.get("spark.shuffle.externalSorting", "false").toBoolean
@@ -45,6 +46,7 @@ case class Aggregator[K, V, C] (
         kv = iter.next()
         combiners.changeValue(kv._1, update)
       }
+      logWarning("*** Finished inserting values. Final map size is "+SizeEstimator.estimate(combiners))
       combiners.iterator
     } else {
       val combiners =
@@ -68,6 +70,7 @@ case class Aggregator[K, V, C] (
         kc = iter.next()
         combiners.changeValue(kc._1, update)
       }
+      logWarning("*** Finished inserting combiners. Final map size is "+SizeEstimator.estimate(combiners))
       combiners.iterator
     } else {
       val combiners = new ExternalAppendOnlyMap[K, C, C](identity, mergeCombiners, mergeCombiners)
