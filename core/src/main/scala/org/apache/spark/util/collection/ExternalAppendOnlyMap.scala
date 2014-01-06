@@ -92,6 +92,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   private var spillCount = 0
 
   private var prevSize = -1L
+  private var totalBytesSpilledMemory = 0L
+  private var totalBytesSpilledDisk = 0L
 
   def insert(key: K, value: V) {
     insertCount += 1
@@ -105,6 +107,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     val newSize = currentMap.estimateSize()
     if (newSize > spillThreshold) {
       logWarning("In-memory map size jumped from %s to %s!".format(prevSize, newSize))
+      totalBytesSpilledMemory += newSize
       spill()
     }
     prevSize = newSize
@@ -132,7 +135,9 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       writer.commit()
     } finally {
       // Partial failures cannot be tolerated; do not revert partial writes
-      logWarning("*** The new spilled file is %d bytes long!".format(writer.bytesWritten))
+      val fileLength = file.length
+      logWarning("*** The new spilled file is %d bytes long, or %d bytes long!".format(writer.bytesWritten, file.length))
+      totalBytesSpilled += fileLength
       writer.close()
     }
     currentMap = new SizeTrackingAppendOnlyMap[K, C]
@@ -141,6 +146,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
   override def iterator: Iterator[(K, C)] = {
     if (spilledMaps.isEmpty) {
+      logWarning("*** In-memory map size is %s!".format(prevSize))
       currentMap.iterator
     } else {
       new ExternalIterator()
