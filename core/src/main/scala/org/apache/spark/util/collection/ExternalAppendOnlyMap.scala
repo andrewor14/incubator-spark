@@ -137,7 +137,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       // Partial failures cannot be tolerated; do not revert partial writes
       val fileLength = file.length
       logWarning("*** The new spilled file is %d bytes long, or %d bytes long!".format(writer.bytesWritten, file.length))
-      totalBytesSpilled += fileLength
+      totalBytesSpilledDisk += fileLength
       writer.close()
     }
     currentMap = new SizeTrackingAppendOnlyMap[K, C]
@@ -149,6 +149,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       logWarning("*** In-memory map size is %s!".format(prevSize))
       currentMap.iterator
     } else {
+      logWarning("*** Total number of bytes spilled: Memory - %d, Disk - %d ***".
+        format(totalBytesSpilledMemory, totalBytesSpilledDisk))
       new ExternalIterator()
     }
   }
