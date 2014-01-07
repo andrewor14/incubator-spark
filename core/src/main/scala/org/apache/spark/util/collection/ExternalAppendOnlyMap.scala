@@ -132,7 +132,9 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     val writer =
       new DiskBlockObjectWriter(blockId, file, serializer, fileBufferSize, identity, syncWrites)
     try {
+      val _sortStart = System.nanoTime()
       val it = currentMap.destructiveSortedIterator(comparator)
+      logWarning("### Sorting took %s ns ###".format(System.nanoTime() - _sortStart))
       while (it.hasNext) {
         val kv = it.next()
         writer.write(kv)
@@ -141,9 +143,10 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     } finally {
       // Partial failures cannot be tolerated; do not revert partial writes
       val fileLength = file.length
-      logWarning("*** The new spilled file is %d bytes long, or %d bytes long!".format(writer.bytesWritten, file.length))
+      logWarning("*** The new spilled file is %d bytes long!".format(writer.bytesWritten))
       totalBytesSpilledDisk += fileLength
       writer.close()
+      logWarning("### Spilling took %s ns ###".format(writer.timeWriting()))
     }
     currentMap = new SizeTrackingAppendOnlyMap[K, C]
     spilledMaps.append(new DiskMapIterator(file))
