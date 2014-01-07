@@ -82,7 +82,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
   // How often to update spillThreshold
   private val updateThresholdInterval =
-    sparkConf.getInt("spark.shuffle.updateThresholdInterval", 100)
+    sparkConf.getInt("spark.shuffle.updateThresholdInterval", 10000)
 
   private val fileBufferSize = sparkConf.getInt("spark.shuffle.file.buffer.kb", 100) * 1024
   private val syncWrites = sparkConf.get("spark.shuffle.sync", "false").toBoolean
@@ -117,6 +117,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   private def updateSpillThreshold() {
     val numRunningTasks = math.max(SparkEnv.get.numRunningTasks, 1)
     spillThreshold = maxMemoryThreshold / numRunningTasks
+    logWarning("=> Threshold is %d, and there are %d tasks running."
+      .format(spillThreshhold, numRunningTasks))
   }
 
   private def spill() {
@@ -146,7 +148,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
   override def iterator: Iterator[(K, C)] = {
     if (spilledMaps.isEmpty) {
-      logWarning("*** In-memory map size is %s!".format(prevSize))
+      logWarning("*** In-memory map size is %s, and threshold is %s MB!"
+        .format(prevSize, spillThreshold / (1024 * 1024)))
       currentMap.iterator
     } else {
       logWarning("*** Total number of bytes spilled: Memory - %d, Disk - %d ***".
