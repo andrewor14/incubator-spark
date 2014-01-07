@@ -74,6 +74,9 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   private val maxMemoryThreshold = {
     val memoryFraction = sparkConf.getDouble("spark.shuffle.memoryFraction", 0.75)
     val safetyFraction = sparkConf.getDouble("spark.shuffle.safetyFraction", 0.8)
+    logWarning("-------- Runtime.getRuntime.maxMemory = %s".format(Runtime.getRuntime.maxMemory))
+    logWarning("-------- spark.shuffle.memoryFraction = %s".format(memoryFraction))
+    logWarning("-------- spark.shuffle.safetyFraction = %s".format(safetyFraction))
     (Runtime.getRuntime.maxMemory * memoryFraction * safetyFraction).toLong
   }
 
