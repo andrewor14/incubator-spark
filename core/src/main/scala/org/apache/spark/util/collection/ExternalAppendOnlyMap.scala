@@ -118,7 +118,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     val numRunningTasks = math.max(SparkEnv.get.numRunningTasks, 1)
     spillThreshold = maxMemoryThreshold / numRunningTasks
     logWarning("=> Threshold is %d, and there are %d tasks running."
-      .format(spillThreshhold, numRunningTasks))
+      .format(spillThreshold, numRunningTasks))
   }
 
   private def spill() {
