@@ -18,6 +18,7 @@
 package org.apache.spark
 
 import org.apache.spark.util.collection.{AppendOnlyMap, ExternalAppendOnlyMap}
+import org.apache.spark.util.SizeEstimator
 
 /**
  * A set of functions used to aggregate data.
@@ -48,6 +49,7 @@ case class Aggregator[K, V, C] (
       }
       val it = combiners.iterator
       logWarning("### combineValuesByKey took %s ns".format(System.nanoTime() - _start))
+      logWarning("*** Finished inserting values. Final map size is "+SizeEstimator.estimate(combiners))
       it
     } else {
       val combiners =
@@ -76,6 +78,7 @@ case class Aggregator[K, V, C] (
       }
       val it = combiners.iterator
       logWarning("### combineCombinersByKey took %s ns".format(System.nanoTime() - _start))
+      logWarning("*** Finished inserting combiners. Final map size is "+SizeEstimator.estimate(combiners))
       it
     } else {
       val combiners = new ExternalAppendOnlyMap[K, C, C](identity, mergeCombiners, mergeCombiners)

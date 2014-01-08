@@ -23,7 +23,9 @@ import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.{InterruptibleIterator, Partition, Partitioner, SparkEnv, TaskContext}
 import org.apache.spark.{Dependency, OneToOneDependency, ShuffleDependency}
+import org.apache.spark.{Dependency, OneToOneDependency, ShuffleDependency, Logging}
 import org.apache.spark.util.collection.{ExternalAppendOnlyMap, AppendOnlyMap}
+import org.apache.spark.util.SizeEstimator
 
 private[spark] sealed trait CoGroupSplitDep extends Serializable
 
@@ -57,7 +59,7 @@ private[spark] class CoGroupPartition(idx: Int, val deps: Array[CoGroupSplitDep]
  * @param part partitioner used to partition the shuffle output.
  */
 class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: Partitioner)
-  extends RDD[(K, Seq[Seq[_]])](rdds.head.context, Nil) {
+  extends RDD[(K, Seq[Seq[_]])](rdds.head.context, Nil) with Logging {
 
   // For example, `(k, a) cogroup (k, b)` produces k -> Seq(ArrayBuffer as, ArrayBuffer bs).
   // Each ArrayBuffer is represented as a CoGroup, and the resulting Seq as a CoGroupCombiner.
@@ -145,7 +147,10 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
       }
       val it = map.iterator
       logWarning("### CoGroup took %s ns".format(System.nanoTime() - _start))
+      logWarning("*** COGROUP: In-memory map size is %s! ***".format(SizeEstimator.estimate(map)))
       new InterruptibleIterator(context, it)
+
+      new InterruptibleIterator(context, map.iterator)
     } else {
       val map = createExternalMap(numRdds)
       rddIterators.foreach { case (it, depNum) =>
