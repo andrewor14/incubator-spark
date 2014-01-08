@@ -29,12 +29,13 @@ import org.apache.spark.util.collection.{AppendOnlyMap, ExternalAppendOnlyMap}
 case class Aggregator[K, V, C] (
     createCombiner: V => C,
     mergeValue: (C, V) => C,
-    mergeCombiners: (C, C) => C) {
+    mergeCombiners: (C, C) => C) extends Logging {
 
   private val sparkConf = SparkEnv.get.conf
   private val externalSorting = sparkConf.get("spark.shuffle.externalSorting", "false").toBoolean
 
   def combineValuesByKey(iter: Iterator[_ <: Product2[K, V]]) : Iterator[(K, C)] = {
+    val _start = System.nanoTime()
     if (!externalSorting) {
       val combiners = new AppendOnlyMap[K,C]
       var kv: Product2[K, V] = null
@@ -45,7 +46,9 @@ case class Aggregator[K, V, C] (
         kv = iter.next()
         combiners.changeValue(kv._1, update)
       }
-      combiners.iterator
+      val it = combiners.iterator
+      logWarning("### combineValuesByKey took %s ns".format(System.nanoTime() - _start))
+      it
     } else {
       val combiners =
         new ExternalAppendOnlyMap[K, V, C](createCombiner, mergeValue, mergeCombiners)
@@ -53,11 +56,14 @@ case class Aggregator[K, V, C] (
         val (k, v) = iter.next()
         combiners.insert(k, v)
       }
-      combiners.iterator
+      val it = combiners.iterator
+      logWarning("### combineValuesByKey took %s ns".format(System.nanoTime() - _start))
+      it
     }
   }
 
   def combineCombinersByKey(iter: Iterator[(K, C)]) : Iterator[(K, C)] = {
+    val _start = System.nanoTime()
     if (!externalSorting) {
       val combiners = new AppendOnlyMap[K,C]
       var kc: Product2[K, C] = null
@@ -68,14 +74,18 @@ case class Aggregator[K, V, C] (
         kc = iter.next()
         combiners.changeValue(kc._1, update)
       }
-      combiners.iterator
+      val it = combiners.iterator
+      logWarning("### combineCombinersByKey took %s ns".format(System.nanoTime() - _start))
+      it
     } else {
       val combiners = new ExternalAppendOnlyMap[K, C, C](identity, mergeCombiners, mergeCombiners)
       while (iter.hasNext) {
         val (k, c) = iter.next()
         combiners.insert(k, c)
       }
-      combiners.iterator
+      val it = combiners.iterator
+      logWarning("### combineCombinersByKey took %s ns".format(System.nanoTime() - _start))
+      it
     }
   }
 }

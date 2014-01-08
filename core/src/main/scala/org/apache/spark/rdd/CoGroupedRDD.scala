@@ -128,6 +128,7 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
       }
     }
 
+    val _start = System.nanoTime()
     if (!externalSorting) {
       val map = new AppendOnlyMap[K, CoGroupCombiner]
       val update: (Boolean, CoGroupCombiner) => CoGroupCombiner = (hadVal, oldVal) => {
@@ -142,7 +143,9 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
           getCombiner(kv._1)(depNum) += kv._2
         }
       }
-      new InterruptibleIterator(context, map.iterator)
+      val it = map.iterator
+      logWarning("### CoGroup took %s ns".format(System.nanoTime() - _start))
+      new InterruptibleIterator(context, it)
     } else {
       val map = createExternalMap(numRdds)
       rddIterators.foreach { case (it, depNum) =>
@@ -151,7 +154,9 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
           map.insert(kv._1, new CoGroupValue(kv._2, depNum))
         }
       }
-      new InterruptibleIterator(context, map.iterator)
+      val it = map.iterator
+      logWarning("### CoGroup took %s ns".format(System.nanoTime() - _start))
+      new InterruptibleIterator(context, it)
     }
   }
 

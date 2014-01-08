@@ -711,6 +711,7 @@ abstract class RDD[T: ClassTag](
    */
   def count(): Long = {
     sc.runJob(this, (iter: Iterator[T]) => {
+      val _start = System.nanoTime()
       // Use a while loop to count the number of elements rather than iter.size because
       // iter.size uses a for loop, which is slightly slower in current version of Scala.
       var result = 0L
@@ -718,6 +719,8 @@ abstract class RDD[T: ClassTag](
         result += 1L
         iter.next()
       }
+      logWarning("### Counting took %s ns (%s elements)"
+        .format(System.nanoTime() - _start, result))
       result
     }).sum
   }
