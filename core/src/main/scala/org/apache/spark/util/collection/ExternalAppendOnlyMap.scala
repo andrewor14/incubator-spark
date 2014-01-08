@@ -134,7 +134,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     try {
       val _sortStart = System.nanoTime()
       val it = currentMap.destructiveSortedIterator(comparator)
-      logWarning("### Sorting took %s ns ###".format(System.nanoTime() - _sortStart))
+      logWarning("### Sorting1 took %s ns ###".format(System.nanoTime() - _sortStart))
       while (it.hasNext) {
         val kv = it.next()
         writer.write(kv)
@@ -172,7 +172,10 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
     // Input streams are derived both from the in-memory map and spilled maps on disk
     // The in-memory map is sorted in place, while the spilled maps are already in sorted order
-    val inputStreams = Seq(currentMap.destructiveSortedIterator(comparator)) ++ spilledMaps
+    val _sortStart = System.nanoTime()
+    val sortedMap = currentMap.destructiveSortedIterator(comparator)
+    logWarning("### Sorting2 took %s ns!".format(System.nanoTime() - _sortStart))
+    val inputStreams = Seq(sortedMap) ++ spilledMaps
 
     inputStreams.foreach{ it =>
       val kcPairs = getMorePairs(it)
