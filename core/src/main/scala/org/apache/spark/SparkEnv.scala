@@ -17,8 +17,6 @@
 
 package org.apache.spark
 
-import java.util.concurrent.atomic.AtomicLong
-
 import scala.collection.mutable
 
 import akka.actor._
@@ -60,7 +58,7 @@ class SparkEnv private[spark] (
 
   // A mapping of thread ID to amount of memory used for shuffle in bytes
   // All accesses should be manually synchronized
-  val shuffleMemoryMap = new mutable.HashMap[Long, Long]()
+  val shuffleMemoryMap = mutable.HashMap[Long, Long]()
 
   private val pythonWorkers = mutable.HashMap[(String, Map[String, String]), PythonWorkerFactory]()
 
