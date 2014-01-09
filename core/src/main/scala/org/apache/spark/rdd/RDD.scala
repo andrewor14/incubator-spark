@@ -718,7 +718,6 @@ abstract class RDD[T: ClassTag](
         result += 1L
         iter.next()
       }
-      logWarning("weird...")
       result
     }).sum
   }
