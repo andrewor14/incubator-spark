@@ -279,6 +279,7 @@ private[spark] class Executor(
           //System.exit(1)
         }
       } finally {
+        // TODO: Do this only for ShuffleMapTask
         env.unregisterShuffleMemory()
         runningTasks.remove(taskId)
       }

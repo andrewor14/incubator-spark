@@ -113,10 +113,7 @@ class SparkEnv private[spark] (
   def unregisterShuffleMemory() {
     val threadId = Thread.currentThread().getId
     val numBytes = shuffleMemoryMap.remove(threadId)
-    val n = numBytes.getOrElse{
-      logWarning("Removing shuffle information from non-existing thread %d".format(threadId))
-      0L
-    }
+    val n = numBytes.getOrElse(0L)
     val x = _totalShuffleMemoryUsed.addAndGet(-n) // subtract
     logWarning("* totalShuffleMemoryUsed: - %d -> %d (%d)".format(x+n, x,
       Thread.currentThread().getId))

@@ -108,7 +108,6 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       if (hadVal) mergeValue(oldVal, value) else createCombiner(value)
     }
     if (insertCount > initialInsertThreshold && currentMap.atGrowThreshold) {
-      logWarning("* At grow threshold! (%d)".format(Thread.currentThread().getId))
       val mapSize = currentMap.estimateSize()
       val freeSpace = maxMemoryThreshold - SparkEnv.get.totalShuffleMemoryUsed
       if (freeSpace > mapSize * 2) {
@@ -116,8 +115,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
           .format(freeSpace, mapSize * 2, Thread.currentThread().getId))
         SparkEnv.get.registerShuffleMemory(mapSize * 2)
       } else {
-        logWarning("* There is NOT enough space :( (%d). Spill! (%d)"
-          .format(freeSpace, Thread.currentThread().getId))
+        logWarning("* There is NOT enough space :( (%d). Spilling %d bytes! (%d)"
+          .format(freeSpace, mapSize, Thread.currentThread().getId))
         spill(mapSize)
       }
     }
