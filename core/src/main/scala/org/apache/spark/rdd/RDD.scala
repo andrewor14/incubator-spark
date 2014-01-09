@@ -719,7 +719,7 @@ abstract class RDD[T: ClassTag](
         result += 1L
         iter.next()
       }
-      logWarning("### Counting took %d ns! %d elements. (%d)"
+      println("### Counting took %d ns! %d elements. (%d)"
         .format(System.nanoTime() - _start, result, Thread.currentThread().getId))
       result
     }).sum
