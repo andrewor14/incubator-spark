@@ -90,9 +90,9 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   /**
    * Insert the given key and value into the map.
    *
-   * If the underlying map is about to grow, check if there is sufficient global memory to
-   * allocate twice its current size. If so, allocate it and grow the map; otherwise, spill
-   * the in-memory map to disk.
+   * If the underlying map is about to grow, check if the global pool of shuffle memory has
+   * enough room for this to happen. If so, allocate the memory required to grow the map;
+   * otherwise, spill the in-memory map to disk.
    *
    * The shuffle memory usage of the first initialInsertThreshold entries is not tracked.
    */
@@ -103,10 +103,25 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     }
     if (insertCount > initialInsertThreshold && currentMap.atGrowThreshold) {
       val mapSize = currentMap.estimateSize()
-      val freeSpace = maxMemoryThreshold - SparkEnv.get.totalShuffleMemoryUsed
-      if (freeSpace > mapSize * 2) {
-        SparkEnv.get.registerShuffleMemory(mapSize * 2)
-      } else {
+      var shouldSpill = false
+      val shuffleMemoryMap = SparkEnv.get.shuffleMemoryMap
+
+      // Atomically check whether there is sufficient memory in the global pool for
+      // this map to grow and, if possible, allocate the required amount
+      shuffleMemoryMap.synchronized {
+        val threadId = Thread.currentThread().getId
+        val previouslyOccupiedMemory = shuffleMemoryMap.get(threadId)
+        val availableMemory = maxMemoryThreshold -
+          (shuffleMemoryMap.values.sum - previouslyOccupiedMemory.getOrElse(0L))
+
+        // Assume map grow factor is 2x
+        shouldSpill = availableMemory < mapSize * 2
+        if (!shouldSpill) {
+          shuffleMemoryMap(threadId) = mapSize * 2
+        }
+      }
+      // Do not synchronize spills
+      if (shouldSpill) {
         spill(mapSize)
       }
     }
@@ -138,7 +153,10 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     spilledMaps.append(new DiskMapIterator(file))
 
     // Reset the amount of shuffle memory used by this map in the global pool
-    SparkEnv.get.registerShuffleMemory(0)
+    val shuffleMemoryMap = SparkEnv.get.shuffleMemoryMap
+    shuffleMemoryMap.synchronized {
+      shuffleMemoryMap(Thread.currentThread().getId) = 0
+    }
     insertCount = 0
   }
 

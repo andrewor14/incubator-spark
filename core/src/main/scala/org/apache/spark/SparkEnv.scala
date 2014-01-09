@@ -58,14 +58,11 @@ class SparkEnv private[spark] (
     val metricsSystem: MetricsSystem,
     val conf: SparkConf) extends Logging {
 
+  // A mapping of thread ID to amount of memory used for shuffle in bytes
+  // All accesses should be manually synchronized
+  val shuffleMemoryMap = new mutable.HashMap[Long, Long]()
+
   private val pythonWorkers = mutable.HashMap[(String, Map[String, String]), PythonWorkerFactory]()
-
-  // Mapping of thread ID to amount of memory used for shuffle in bytes
-  private val shuffleMemoryMap = new mutable.HashMap[Long, Long]()
-    with mutable.SynchronizedMap[Long, Long]
-
-  // Amount of memory used for shuffle across all threads
-  private val _totalShuffleMemoryUsed = new AtomicLong()
 
   // A general, soft-reference map for metadata needed during HadoopRDD split computation
   // (e.g., HadoopFileRDD uses this to cache JobConfs and InputFormats).
@@ -94,27 +91,6 @@ class SparkEnv private[spark] (
       pythonWorkers.getOrElseUpdate(key, new PythonWorkerFactory(pythonExec, envVars)).create()
     }
   }
-
-  /**
-   * Register shuffle memory usage of the current thread, updating the total
-   */
-  def registerShuffleMemory(numBytes: Long) {
-    val threadId = Thread.currentThread().getId
-    val oldNumBytes = shuffleMemoryMap.get(threadId)
-    shuffleMemoryMap(threadId) = numBytes
-    _totalShuffleMemoryUsed.addAndGet(numBytes - oldNumBytes.getOrElse(0L))
-  }
-
-  /**
-   * Unregister shuffle memory usage of the current thread, updating the total
-   */
-  def unregisterShuffleMemory() {
-    val threadId = Thread.currentThread().getId
-    val numBytes = shuffleMemoryMap.remove(threadId)
-    _totalShuffleMemoryUsed.addAndGet(-numBytes.getOrElse(0L)) // subtract
-  }
-
-  def totalShuffleMemoryUsed: Long = _totalShuffleMemoryUsed.get()
 }
 
 object SparkEnv extends Logging {
