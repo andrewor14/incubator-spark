@@ -186,7 +186,6 @@ private[spark] class Executor(
       var taskStart: Long = 0
       def gcTime = ManagementFactory.getGarbageCollectorMXBeans.map(_.getCollectionTime).sum
       val startGCTime = gcTime
-      env.incrementNumRunningTasks()
 
       try {
         SparkEnv.set(env)
@@ -280,7 +279,7 @@ private[spark] class Executor(
           //System.exit(1)
         }
       } finally {
-        env.decrementNumRunningTasks()
+        env.unregisterShuffleMemory()
         runningTasks.remove(taskId)
       }
     }

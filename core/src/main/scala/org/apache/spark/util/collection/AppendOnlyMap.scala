@@ -288,4 +288,9 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64) extends Iterable[(K, V)] wi
       }
     }
   }
+
+  /**
+   * Return whether the next insert will cause the map to grow
+   */
+  def atGrowThreshold: Boolean = curSize == growThreshold
 }

@@ -22,7 +22,6 @@ import java.io.{ObjectOutputStream, IOException}
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.{InterruptibleIterator, Partition, Partitioner, SparkEnv, TaskContext}
-import org.apache.spark.{Dependency, OneToOneDependency, ShuffleDependency}
 import org.apache.spark.{Dependency, OneToOneDependency, ShuffleDependency, Logging}
 import org.apache.spark.util.collection.{ExternalAppendOnlyMap, AppendOnlyMap}
 import org.apache.spark.util.SizeEstimator
@@ -146,8 +145,10 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
         }
       }
       val it = map.iterator
-      logWarning("### CoGroup took %s ns".format(System.nanoTime() - _start))
-      logWarning("*** COGROUP: In-memory map size is %s! ***".format(SizeEstimator.estimate(map)))
+      logWarning("### CoGroup took %s ns (%d)"
+        .format(System.nanoTime() - _start, Thread.currentThread().getId))
+      logWarning("*** COGROUP: In-memory map size is %s! *** (%d)"
+        .format(SizeEstimator.estimate(map), Thread.currentThread().getId))
       new InterruptibleIterator(context, it)
 
       new InterruptibleIterator(context, map.iterator)
@@ -160,7 +161,8 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
         }
       }
       val it = map.iterator
-      logWarning("### CoGroup took %s ns".format(System.nanoTime() - _start))
+      logWarning("### CoGroup took %s ns (%d)"
+        .format(System.nanoTime() - _start, Thread.currentThread().getId))
       new InterruptibleIterator(context, it)
     }
   }

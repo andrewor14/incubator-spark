@@ -48,8 +48,10 @@ case class Aggregator[K, V, C] (
         combiners.changeValue(kv._1, update)
       }
       val it = combiners.iterator
-      logWarning("### combineValuesByKey took %s ns".format(System.nanoTime() - _start))
-      logWarning("*** Finished inserting values. Final map size is "+SizeEstimator.estimate(combiners))
+      logWarning("### combineValuesByKey took %s ns (%d)"
+        .format(System.nanoTime() - _start, Thread.currentThread().getId))
+      logWarning("*** Finished inserting values. Final map size is %d (%d)"
+        .format(SizeEstimator.estimate(combiners), Thread.currentThread().getId))
       it
     } else {
       val combiners =
@@ -59,7 +61,8 @@ case class Aggregator[K, V, C] (
         combiners.insert(k, v)
       }
       val it = combiners.iterator
-      logWarning("### combineValuesByKey took %s ns".format(System.nanoTime() - _start))
+      logWarning("### combineValuesByKey took %s ns (%d)"
+        .format(System.nanoTime() - _start, Thread.currentThread().getId))
       it
     }
   }
@@ -77,8 +80,10 @@ case class Aggregator[K, V, C] (
         combiners.changeValue(kc._1, update)
       }
       val it = combiners.iterator
-      logWarning("### combineCombinersByKey took %s ns".format(System.nanoTime() - _start))
-      logWarning("*** Finished inserting combiners. Final map size is "+SizeEstimator.estimate(combiners))
+      logWarning("### combineCombinersByKey took %s ns (%d)"
+        .format(System.nanoTime() - _start, Thread.currentThread().getId))
+      logWarning("*** Finished inserting combiners. Final map size is %d (%d)"
+        .format(SizeEstimator.estimate(combiners), Thread.currentThread().getId))
       it
     } else {
       val combiners = new ExternalAppendOnlyMap[K, C, C](identity, mergeCombiners, mergeCombiners)
@@ -87,7 +92,8 @@ case class Aggregator[K, V, C] (
         combiners.insert(k, c)
       }
       val it = combiners.iterator
-      logWarning("### combineCombinersByKey took %s ns".format(System.nanoTime() - _start))
+      logWarning("### combineCombinersByKey took %s ns (%d)"
+        .format(System.nanoTime() - _start, Thread.currentThread().getId))
       it
     }
   }

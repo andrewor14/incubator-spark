@@ -17,7 +17,7 @@
 
 package org.apache.spark
 
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable
 
@@ -56,12 +56,16 @@ class SparkEnv private[spark] (
     val httpFileServer: HttpFileServer,
     val sparkFilesDir: String,
     val metricsSystem: MetricsSystem,
-    val conf: SparkConf) {
+    val conf: SparkConf) extends Logging {
 
   private val pythonWorkers = mutable.HashMap[(String, Map[String, String]), PythonWorkerFactory]()
 
-  // Number of tasks currently running across all threads
-  private val _numRunningTasks = new AtomicInteger(0)
+  // Mapping of thread ID to amount of memory used for shuffle in bytes
+  private val shuffleMemoryMap = new mutable.HashMap[Long, Long]()
+    with mutable.SynchronizedMap[Long, Long]
+
+  // Amount of memory used for shuffle across all threads
+  private val _totalShuffleMemoryUsed = new AtomicLong()
 
   // A general, soft-reference map for metadata needed during HadoopRDD split computation
   // (e.g., HadoopFileRDD uses this to cache JobConfs and InputFormats).
@@ -92,11 +96,33 @@ class SparkEnv private[spark] (
   }
 
   /**
-   * Return the number of tasks currently running across all threads
+   * Register shuffle memory usage of the current thread, updating the total
    */
-  def numRunningTasks: Int = _numRunningTasks.intValue()
-  def incrementNumRunningTasks(): Int = _numRunningTasks.incrementAndGet()
-  def decrementNumRunningTasks(): Int = _numRunningTasks.decrementAndGet()
+  def registerShuffleMemory(numBytes: Long) {
+    val threadId = Thread.currentThread().getId
+    val oldNumBytes = shuffleMemoryMap.get(threadId)
+    shuffleMemoryMap(threadId) = numBytes
+    val x = _totalShuffleMemoryUsed.addAndGet(numBytes - oldNumBytes.getOrElse(0L))
+    logWarning("* totalShuffleMemoryUsed: + %d -> %d (%d)".format(x-numBytes, x,
+      Thread.currentThread().getId))
+  }
+
+  /**
+   * Unregister shuffle memory usage of the current thread, updating the total
+   */
+  def unregisterShuffleMemory() {
+    val threadId = Thread.currentThread().getId
+    val numBytes = shuffleMemoryMap.remove(threadId)
+    val n = numBytes.getOrElse{
+      logWarning("Removing shuffle information from non-existing thread %d".format(threadId))
+      0L
+    }
+    val x = _totalShuffleMemoryUsed.addAndGet(-n) // subtract
+    logWarning("* totalShuffleMemoryUsed: - %d -> %d (%d)".format(x+n, x,
+      Thread.currentThread().getId))
+  }
+
+  def totalShuffleMemoryUsed: Long = _totalShuffleMemoryUsed.get()
 }
 
 object SparkEnv extends Logging {
