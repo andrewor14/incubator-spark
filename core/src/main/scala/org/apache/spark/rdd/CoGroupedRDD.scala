@@ -22,9 +22,8 @@ import java.io.{ObjectOutputStream, IOException}
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.{InterruptibleIterator, Partition, Partitioner, SparkEnv, TaskContext}
-import org.apache.spark.{Dependency, OneToOneDependency, ShuffleDependency, Logging}
+import org.apache.spark.{Dependency, OneToOneDependency, ShuffleDependency}
 import org.apache.spark.util.collection.{ExternalAppendOnlyMap, AppendOnlyMap}
-import org.apache.spark.util.SizeEstimator
 
 private[spark] sealed trait CoGroupSplitDep extends Serializable
 
@@ -58,7 +57,7 @@ private[spark] class CoGroupPartition(idx: Int, val deps: Array[CoGroupSplitDep]
  * @param part partitioner used to partition the shuffle output.
  */
 class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: Partitioner)
-  extends RDD[(K, Seq[Seq[_]])](rdds.head.context, Nil) with Logging {
+  extends RDD[(K, Seq[Seq[_]])](rdds.head.context, Nil) {
 
   // For example, `(k, a) cogroup (k, b)` produces k -> Seq(ArrayBuffer as, ArrayBuffer bs).
   // Each ArrayBuffer is represented as a CoGroup, and the resulting Seq as a CoGroupCombiner.
@@ -129,7 +128,6 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
       }
     }
 
-    val _start = System.nanoTime()
     if (!externalSorting) {
       val map = new AppendOnlyMap[K, CoGroupCombiner]
       val update: (Boolean, CoGroupCombiner) => CoGroupCombiner = (hadVal, oldVal) => {
@@ -144,13 +142,6 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
           getCombiner(kv._1)(depNum) += kv._2
         }
       }
-      val it = map.iterator
-      logWarning("### CoGroup took %s ns (%d)"
-        .format(System.nanoTime() - _start, Thread.currentThread().getId))
-      logWarning("*** COGROUP: In-memory map size is %s! *** (%d)"
-        .format(SizeEstimator.estimate(map), Thread.currentThread().getId))
-      new InterruptibleIterator(context, it)
-
       new InterruptibleIterator(context, map.iterator)
     } else {
       val map = createExternalMap(numRdds)
@@ -160,10 +151,7 @@ class CoGroupedRDD[K](@transient var rdds: Seq[RDD[_ <: Product2[K, _]]], part: 
           map.insert(kv._1, new CoGroupValue(kv._2, depNum))
         }
       }
-      val it = map.iterator
-      logWarning("### CoGroup took %s ns (%d)"
-        .format(System.nanoTime() - _start, Thread.currentThread().getId))
-      new InterruptibleIterator(context, it)
+      new InterruptibleIterator(context, map.iterator)
     }
   }
 

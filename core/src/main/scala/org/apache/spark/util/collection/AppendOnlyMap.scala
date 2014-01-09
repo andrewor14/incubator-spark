@@ -18,7 +18,6 @@
 package org.apache.spark.util.collection
 
 import java.util.{Arrays, Comparator}
-import org.apache.spark.Logging
 
 /**
  * A simple open hash table optimized for the append-only use case, where keys
@@ -32,7 +31,7 @@ import org.apache.spark.Logging
  */
 private[spark]
 class AppendOnlyMap[K, V](initialCapacity: Int = 64) extends Iterable[(K,
-  V)] with Serializable  with Logging {
+  V)] with Serializable {
   require(initialCapacity <= (1 << 29), "Can't make capacity bigger than 2^29 elements")
   require(initialCapacity >= 1, "Invalid initial capacity")
 

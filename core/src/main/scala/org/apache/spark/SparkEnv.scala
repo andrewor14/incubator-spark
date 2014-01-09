@@ -102,9 +102,7 @@ class SparkEnv private[spark] (
     val threadId = Thread.currentThread().getId
     val oldNumBytes = shuffleMemoryMap.get(threadId)
     shuffleMemoryMap(threadId) = numBytes
-    val x = _totalShuffleMemoryUsed.addAndGet(numBytes - oldNumBytes.getOrElse(0L))
-    logWarning("* totalShuffleMemoryUsed: + %d -> %d (%d)".format(x-numBytes, x,
-      Thread.currentThread().getId))
+    _totalShuffleMemoryUsed.addAndGet(numBytes - oldNumBytes.getOrElse(0L))
   }
 
   /**
@@ -113,10 +111,7 @@ class SparkEnv private[spark] (
   def unregisterShuffleMemory() {
     val threadId = Thread.currentThread().getId
     val numBytes = shuffleMemoryMap.remove(threadId)
-    val n = numBytes.getOrElse(0L)
-    val x = _totalShuffleMemoryUsed.addAndGet(-n) // subtract
-    logWarning("* totalShuffleMemoryUsed: - %d -> %d (%d)".format(x+n, x,
-      Thread.currentThread().getId))
+    _totalShuffleMemoryUsed.addAndGet(-numBytes.getOrElse(0L)) // subtract
   }
 
   def totalShuffleMemoryUsed: Long = _totalShuffleMemoryUsed.get()

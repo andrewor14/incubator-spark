@@ -73,9 +73,6 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   private val maxMemoryThreshold = {
     val memoryFraction = sparkConf.getDouble("spark.shuffle.memoryFraction", 0.75)
     val safetyFraction = sparkConf.getDouble("spark.shuffle.safetyFraction", 0.8)
-    logWarning("-------- Runtime.getRuntime.maxMemory = %s".format(Runtime.getRuntime.maxMemory))
-    logWarning("-------- spark.shuffle.memoryFraction = %s".format(memoryFraction))
-    logWarning("-------- spark.shuffle.safetyFraction = %s".format(safetyFraction))
     (Runtime.getRuntime.maxMemory * memoryFraction * safetyFraction).toLong
   }
 
@@ -89,9 +86,6 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   private val ser = serializer.newInstance()
   private var insertCount = 0
   private var spillCount = 0
-
-  private var totalBytesSpilledMemory = 0L
-  private var totalBytesSpilledDisk = 0L
 
   /**
    * Insert the given key and value into the map.
@@ -111,12 +105,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       val mapSize = currentMap.estimateSize()
       val freeSpace = maxMemoryThreshold - SparkEnv.get.totalShuffleMemoryUsed
       if (freeSpace > mapSize * 2) {
-        logWarning("* There is enough space (%d). Registering %d bytes in global pool! (%d)"
-          .format(freeSpace, mapSize * 2, Thread.currentThread().getId))
         SparkEnv.get.registerShuffleMemory(mapSize * 2)
       } else {
-        logWarning("* There is NOT enough space :( (%d). Spilling %d bytes! (%d)"
-          .format(freeSpace, mapSize, Thread.currentThread().getId))
         spill(mapSize)
       }
     }
@@ -128,18 +118,13 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
    */
   private def spill(mapSize: Long) {
     spillCount += 1
-    logWarning("* Spilling in-memory map of %d MB to disk (%d time%s so far) (%d)"
-      .format(mapSize / (1024 * 1024), spillCount, if (spillCount > 1) "s" else "",
-      Thread.currentThread().getId))
-    totalBytesSpilledMemory += mapSize
+    logWarning("* Spilling in-memory map of %d MB to disk (%d time%s so far)"
+      .format(mapSize / (1024 * 1024), spillCount, if (spillCount > 1) "s" else ""))
     val (blockId, file) = diskBlockManager.createTempBlock()
     val writer =
       new DiskBlockObjectWriter(blockId, file, serializer, fileBufferSize, identity, syncWrites)
     try {
-      val _sortStart = System.nanoTime()
       val it = currentMap.destructiveSortedIterator(comparator)
-      logWarning("### Sorting1 took %s ns (%d) ###".format(System.nanoTime() - _sortStart,
-        Thread.currentThread().getId))
       while (it.hasNext) {
         val kv = it.next()
         writer.write(kv)
@@ -147,13 +132,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       writer.commit()
     } finally {
       // Partial failures cannot be tolerated; do not revert partial writes
-      val fileLength = file.length
-      logWarning("*** The new spilled file is %d bytes long (%d)!".format(writer.bytesWritten,
-        Thread.currentThread().getId))
-      totalBytesSpilledDisk += fileLength
       writer.close()
-      logWarning("### Spilling took %s ns (%d) ###".format(writer.timeWriting(),
-        Thread.currentThread().getId))
     }
     currentMap = new SizeTrackingAppendOnlyMap[K, C]
     spilledMaps.append(new DiskMapIterator(file))
@@ -165,12 +144,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
   override def iterator: Iterator[(K, C)] = {
     if (spilledMaps.isEmpty) {
-      logWarning("*** In-memory map size is %d, with no spills *** (%d)"
-        .format(currentMap.estimateSize(), Thread.currentThread().getId))
       currentMap.iterator
     } else {
-      logWarning("*** Total number of bytes spilled: Memory - %d, Disk - %d *** (%d)".
-        format(totalBytesSpilledMemory, totalBytesSpilledDisk, Thread.currentThread().getId))
       new ExternalIterator()
     }
   }
@@ -183,10 +158,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
     // Input streams are derived both from the in-memory map and spilled maps on disk
     // The in-memory map is sorted in place, while the spilled maps are already in sorted order
-    val _sortStart = System.nanoTime()
     val sortedMap = currentMap.destructiveSortedIterator(comparator)
-    logWarning("### Sorting2 took %s ns! (%d)"
-      .format(System.nanoTime() - _sortStart, Thread.currentThread().getId))
     val inputStreams = Seq(sortedMap) ++ spilledMaps
 
     inputStreams.foreach{ it =>
