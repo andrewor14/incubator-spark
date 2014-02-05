@@ -1000,11 +1000,11 @@ Since all data is modeled as RDDs with their lineage of deterministic operations
  for output operations.
 
 ## Failure of the Driver Node
-To allows a streaming application to operate 24/7, Spark Streaming allows a streaming computation
+For a streaming application to operate 24/7, Spark Streaming allows a streaming computation
 to be resumed even after the failure of the driver node. Spark Streaming periodically writes the
 metadata information of the DStreams setup through the `StreamingContext` to a
 HDFS directory (can be any Hadoop-compatible filesystem). This periodic
-*checkpointing* can be enabled by setting a the checkpoint
+*checkpointing* can be enabled by setting the checkpoint
 directory using `ssc.checkpoint(<checkpoint directory>)` as described
 [earlier](#rdd-checkpointing). On failure of the driver node,
 the lost `StreamingContext` can be recovered from this information, and restarted.
@@ -1123,7 +1123,7 @@ There are two different failure behaviors based on which input sources are used.
 1. _Using HDFS files as input source_ - Since the data is reliably stored on HDFS, all data can
 re-computed and therefore no data will be lost due to any failure.
 1. _Using any input source that receives data through a network_ - The received input data is
-replicated in memory to multiple nodes. Since, all the data in the Spark worker's memory is lost
+replicated in memory to multiple nodes. Since all the data in the Spark worker's memory is lost
 when the Spark driver fails, the past input data will not be accessible and driver recovers.
 Hence, if stateful and window-based operations are used
 (like `updateStateByKey`, `window`, `countByValueAndWindow`, etc.), then the intermediate state
@@ -1133,11 +1133,11 @@ In future releases, we will support full recoverability for all input sources. N
 non-stateful transformations like `map`, `count`, and `reduceByKey`, with _all_ input streams,
 the system, upon restarting, will continue to receive and process new data.
 
-To better understand the behavior of the system under driver failure with a HDFS source, lets
+To better understand the behavior of the system under driver failure with a HDFS source, let's
 consider what will happen with a file input stream. Specifically, in the case of the file input
 stream, it will correctly identify new files that were created while the driver was down and
 process them in the same way as it would have if the driver had not failed. To explain further
-in the case of file input stream, we shall use an example. Lets say, files are being generated
+in the case of file input stream, we shall use an example. Let's say, files are being generated
 every second, and a Spark Streaming program reads every new file and output the number of lines
 in the file. This is what the sequence of outputs would be with and without a driver failure.
 
