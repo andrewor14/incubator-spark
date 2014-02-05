@@ -429,8 +429,8 @@ KafkaUtils.createStream(javaStreamingContext, kafkaParams, ...);
 </div>
 
 For more details on these additional sources, see the corresponding [API documentation]
-(#where-to-go-from-here). Furthermore, you can also implement your own custom receiver
-for your sources. See the [Custom Receiver Guide](streaming-custom-receivers.html).
+(http://kafka.apache.org/documentation.html). Furthermore, you can also implement your
+own custom receiver for your sources. See the [Custom Receiver Guide](streaming-custom-receivers.html).
 
 ## Operations
 There are two kinds of DStream operations - _transformations_ and _output operations_. Similar to
@@ -925,7 +925,7 @@ exception saying so.
 ## Monitoring
 Besides Spark's in-built [monitoring capabilities](monitoring.html),
 the progress of a Spark Streaming program can also be monitored using the [StreamingListener]
-(streaming/index.html#org.apache.spark.scheduler.StreamingListener) interface,
+(api/streaming/index.html#org.apache.spark.scheduler.StreamingListener) interface,
 which allows you to get statistics of batch processing times, queueing delays,
 and total end-to-end delays. Note that this is still an experimental API and it is likely to be
 improved upon (i.e., more information reported) in the future.
