@@ -521,7 +521,7 @@ The last two transformations are worth highlighting again.
 <h4>UpdateStateByKey Operation</h4>
 
 The `updateStateByKey` operation allows
-you to main arbitrary stateful computation, where you want to maintain some state data and
+you to maintain arbitrary stateful computation; you may want to maintain some state data and
 continuously update it with new information. To use this, you will have to do two steps.
 
 1. Define the state - The state can be of arbitrary data type.
@@ -1105,8 +1105,8 @@ classes. So, if you are using `getOrCreate`, then make sure that the checkpoint 
 explicitly deleted every time recompiled code needs to be launched.
 
 This failure recovery can be done automatically using Spark's
-[standalone cluster mode](spark-standalone.html), which allows any Spark
-application's driver to be as well as, ensures automatic restart of the driver on failure (see
+[standalone cluster mode](spark-standalone.html), which allows the driver of any Spark application
+to be launched within the cluster and be restarted on failure. (see
 [supervise mode](spark-standalone.html#launching-applications-inside-the-cluster)). This can be
 tested locally by launching the above example using the supervise mode in a
 local standalone cluster and killing the java process running the driver (will be shown as
