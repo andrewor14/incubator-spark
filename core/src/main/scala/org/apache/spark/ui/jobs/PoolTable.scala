@@ -17,27 +17,21 @@
 
 package org.apache.spark.ui.jobs
 
-import scala.collection.mutable.HashMap
-import scala.collection.mutable.HashSet
 import scala.xml.Node
 
-import org.apache.spark.scheduler.{Schedulable, StageInfo}
 import org.apache.spark.ui.UIUtils
+import org.apache.spark.scheduler.Schedulable
+import net.liftweb.json.JsonAST._
 
 /** Table showing list of pools */
-private[spark] class PoolTable(pools: Seq[Schedulable], listener: JobProgressListener) {
-
-  var poolToActiveStages: HashMap[String, HashSet[StageInfo]] = listener.poolToActiveStages
+private[spark] class PoolTable(pools: Seq[Map[String, String]]) {
 
   def toNodeSeq(): Seq[Node] = {
-    listener.synchronized {
-      poolTable(poolRow, pools)
-    }
+    poolTable(poolRow, pools)
   }
 
-  private def poolTable(makeRow: (Schedulable, HashMap[String, HashSet[StageInfo]]) => Seq[Node],
-    rows: Seq[Schedulable]
-    ): Seq[Node] = {
+  private def poolTable(makeRow: (Map[String, String]) => Seq[Node],
+                        rows: Seq[Map[String, String]]): Seq[Node] = {
     <table class="table table-bordered table-striped table-condensed sortable table-fixed">
       <thead>
         <th>Pool Name</th>
@@ -48,25 +42,59 @@ private[spark] class PoolTable(pools: Seq[Schedulable], listener: JobProgressLis
         <th>SchedulingMode</th>
       </thead>
       <tbody>
-        {rows.map(r => makeRow(r, poolToActiveStages))}
+        {rows.map(r => makeRow(r))}
       </tbody>
     </table>
   }
 
-  private def poolRow(p: Schedulable, poolToActiveStages: HashMap[String, HashSet[StageInfo]])
-    : Seq[Node] = {
-    val activeStages = poolToActiveStages.get(p.name) match {
-      case Some(stages) => stages.size
-      case None => 0
-    }
+  private def poolRow(values: Map[String, String]) : Seq[Node] = {
+    val poolName = values("Pool Name")
     <tr>
-      <td><a href={"%s/stages/pool?poolname=%s".format(UIUtils.prependBaseUri(),p.name)}>{p.name}</a></td>
-      <td>{p.minShare}</td>
-      <td>{p.weight}</td>
-      <td>{activeStages}</td>
-      <td>{p.runningTasks}</td>
-      <td>{p.schedulingMode}</td>
+      <td>
+        <a href={"%s/stages/pool?poolname=%s".format(UIUtils.prependBaseUri(), poolName)}>
+          {poolName}
+        </a>
+      </td>
+      <td>{values("Minimum Share")}</td>
+      <td>{values("Pool Weight")}</td>
+      <td>{values("Active Stages")}</td>
+      <td>{values("Running Tasks")}</td>
+      <td>{values("Scheduling Mode")}</td>
     </tr>
   }
 }
 
+private[spark] object PoolTable {
+
+  def constructPoolJson(pool: Schedulable, ui: JobProgressUI): JValue = {
+    val listener = ui.listener
+    val name = pool.name
+    val minimumShare = pool.minShare
+    val weight = pool.weight
+    val activeStages = listener.poolToActiveStages.get(name) match {
+      case Some(stages) => stages.size
+      case None => 0
+    }
+    val runningTasks = pool.runningTasks
+    val schedulingMode = pool.schedulingMode
+
+    val poolFields = Seq("Pool Name", "Minimum Share", "Pool Weight", "Active Stages",
+      "Running Tasks", "Scheduling Mode")
+
+    UIUtils.constructJsonObject(
+      poolFields.zip(Seq(
+        name,
+        minimumShare.toString,
+        weight.toString,
+        activeStages.toString,
+        runningTasks.toString,
+        schedulingMode.toString
+      ))
+    )
+  }
+
+  def constructPoolsJson(pools: Seq[Schedulable], ui: JobProgressUI): JValue = {
+    val poolInfo = pools.map(constructPoolJson(_, ui))
+    JArray(poolInfo.toList)
+  }
+}

@@ -22,44 +22,74 @@ import javax.servlet.http.HttpServletRequest
 import scala.xml.Node
 
 import org.apache.spark.storage.{RDDInfo, StorageUtils}
-import org.apache.spark.ui.UIUtils._
+import org.apache.spark.ui.UIUtils
 import org.apache.spark.ui.Page._
 import org.apache.spark.util.Utils
+import net.liftweb.json.JsonAST._
 
 /** Page showing list of RDD's currently stored in the cluster */
 private[spark] class IndexPage(parent: BlockManagerUI) {
   val sc = parent.sc
 
   def render(request: HttpServletRequest): Seq[Node] = {
-    val storageStatusList = sc.getExecutorStorageStatus
-    // Calculate macro-level statistics
-
-    val rddHeaders = Seq(
-      "RDD Name",
-      "Storage Level",
-      "Cached Partitions",
-      "Fraction Cached",
-      "Size in Memory",
-      "Size on Disk")
-    val rdds = StorageUtils.rddInfoFromStorageStatus(storageStatusList, sc)
-    val content = listingTable(rddHeaders, rddRow, rdds)
-
-    headerSparkPage(content, parent.sc, "Storage ", Storage)
+    val json = renderJson(request)
+    renderHTML(json)
   }
 
-  def rddRow(rdd: RDDInfo): Seq[Node] = {
+  def renderJson(request: HttpServletRequest): JValue = {
+    val storageStatusList = sc.getExecutorStorageStatus
+    val rddStatus = StorageUtils.rddInfoFromStorageStatus(storageStatusList, sc)
+    val rddInfo = rddStatus.map(getRDDInfo)
+    JArray(rddInfo.map(UIUtils.constructJsonObject).toList)
+  }
+
+  def renderHTML(json: JValue): Seq[Node] = {
+    val rddInfoJson = json.asInstanceOf[JArray].arr
+    val rddInfo = rddInfoJson.map(UIUtils.deconstructJsonObjectAsMap)
+    val content = UIUtils.listingTable(rddHeader, rddRow, rddInfo)
+    UIUtils.headerSparkPage(content, parent.sc, "Storage", Storage)
+  }
+
+  private def rddHeader = Seq("RDD Name", "Storage Level", "Cached Partitions", "Fraction Cached",
+    "Size in Memory", "Size on Disk")
+
+  private def rddRow(values: Map[String, String]): Seq[Node] = {
     <tr>
       <td>
-        <a href={"%s/storage/rdd?id=%s".format(prependBaseUri(),rdd.id)}>
-          {rdd.name}
+        <a href={values("RDD Link")}>
+          {values("RDD Name")}
         </a>
       </td>
-      <td>{rdd.storageLevel.description}
+      <td>{values("Storage Level")}
       </td>
-      <td>{rdd.numCachedPartitions}</td>
-      <td>{"%.0f%%".format(rdd.numCachedPartitions * 100.0 / rdd.numPartitions)}</td>
-      <td>{Utils.bytesToString(rdd.memSize)}</td>
-      <td>{Utils.bytesToString(rdd.diskSize)}</td>
+      <td>{values("Cached Partitions")}</td>
+      <td>{values("Fraction Cached")}</td>
+      <td>{Utils.bytesToString(values("Size in Memory").toLong)}</td>
+      <td>{Utils.bytesToString(values("Size on Disk").toLong)}</td>
     </tr>
+  }
+
+  private def getRDDInfo(rdd: RDDInfo): Seq[(String, String)] = {
+    val name = rdd.name
+    val link = "%s/storage/rdd?id=%s".format(UIUtils.prependBaseUri(),rdd.id)
+    val storageLevel = rdd.storageLevel.description
+    val cachedPartitions = rdd.numCachedPartitions
+    val fractionCached = {"%.0f%%".format(rdd.numCachedPartitions * 100.0 / rdd.numPartitions)}
+    val memorySize = rdd.memSize
+    val diskSize = rdd.diskSize
+
+    // Not the same as header row in RDD Info table; this one has "RDD Link"
+    val rddFields = Seq("RDD Name", "RDD Link", "Storage Level", "Cached Partitions",
+      "Fraction Cached", "Size in Memory", "Size on Disk")
+
+    rddFields.zip(Seq(
+      name,
+      link,
+      storageLevel,
+      cachedPartitions.toString,
+      fractionCached,
+      memorySize.toString,
+      diskSize.toString
+    ))
   }
 }

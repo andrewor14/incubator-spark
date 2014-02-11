@@ -20,6 +20,7 @@ package org.apache.spark.ui
 import scala.xml.Node
 
 import org.apache.spark.SparkContext
+import net.liftweb.json.JsonAST._
 
 /** Utility functions for generating XML pages with spark content. */
 private[spark] object UIUtils {
@@ -134,5 +135,92 @@ private[spark] object UIUtils {
         {rows.map(r => makeRow(r))}
       </tbody>
     </table>
+  }
+
+  /**
+   * Construct a list of json fields from a sequence of KV pairs
+   */
+  def constructJsonFields(fields: Seq[(String, JValue)]): List[JField] = {
+    fields.map{case (k, v) => JField(k, v)}.toList
+  }
+
+  /**
+   * Construct a json object from a sequence of KV pairs
+   */
+  def constructJsonObject(fields: Seq[(String, JValue)]): JValue = {
+    JObject(constructJsonFields(fields))
+  }
+
+  /**
+   * Construct a JArray from objects represented as a sequence of KV pairs
+   */
+  def constructJsonArray(objects: Seq[Seq[(String, JValue)]]): JValue = {
+    JArray(objects.map(constructJsonObject).toList)
+  }
+
+  /**
+   * Extract a sequence of KV pairs from a list of json fields
+   */
+  def deconstructJsonFields(fields: List[JField]): Seq[(String, JValue)] = {
+    fields.map { f => (f.name, f.value) }
+  }
+
+  /**
+   * Extract a map of KV pairs from a list of json fields
+   */
+  def deconstructJsonFieldsAsMap(fields: List[JField]): Map[String, JValue] = {
+    deconstructJsonFields(fields).toMap
+  }
+
+  /**
+   * Extract an object represented as a sequence of KV pairs from a list of json fields
+   */
+  def deconstructJsonObject(value: JValue): Seq[(String, JValue)] = {
+    val jsonFields = value.asInstanceOf[JObject].obj
+    UIUtils.deconstructJsonFields(jsonFields)
+  }
+
+  /**
+   * Extract an object represented as a map of KV pairs from a list of json fields
+   */
+  def deconstructJsonObjectAsMap(value: JValue): Map[String, JValue] = {
+    deconstructJsonObject(value).toMap
+  }
+
+  /**
+   * Extract a sequence of objects, each represented as a sequence of KV pairs, from a JArray
+   */
+  def deconstructJsonArray(objects: JValue): Seq[Seq[(String, JValue)]] = {
+    objects.asInstanceOf[JArray].arr.map(deconstructJsonObject)
+  }
+
+  /**
+   * Extract a sequence of objects, each represented as a map of KV pairs, from a JArray
+   */
+  def deconstructJsonArrayAsMap(objects: JValue): Seq[Map[String, JValue]] = {
+    objects.asInstanceOf[JArray].arr.map(deconstructJsonObjectAsMap)
+  }
+
+  /**
+   * Extract a sequence of objects, each represented as a sequence of KV pairs, from a JArray
+   * identified with the given identifier in the given Json AST
+   */
+  def deconstructJsonArray(ast: JValue, identifier: String): Seq[Seq[(String, JValue)]] = {
+    deconstructJsonArray(ast \ identifier)
+  }
+
+  /**
+   * Extract a sequence of objects, each represented as a map of KV pairs, from a JArray
+   * identified with the given identifier in the given Json AST
+   */
+  def deconstructJsonArrayAsMap(ast: JValue, identifier: String): Seq[Map[String, JValue]] = {
+    deconstructJsonArrayAsMap(ast \ identifier)
+  }
+
+  /**
+   * Extract a String identified with the given identifier in the given Json AST
+   */
+  def deconstructJsonString(ast: JValue, identifier: String): String = {
+    (ast \ identifier).asInstanceOf[JString].s
   }
 }

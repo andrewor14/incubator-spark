@@ -17,8 +17,6 @@
 
 package org.apache.spark.ui
 
-import javax.servlet.http.HttpServletRequest
-
 import org.eclipse.jetty.server.{Handler, Server}
 
 import org.apache.spark.{Logging, SparkContext, SparkEnv}
@@ -80,7 +78,6 @@ private[spark] class SparkUI(sc: SparkContext) extends Logging {
   }
 
   private[spark] def appUIAddress = host + ":" + boundPort.getOrElse("-1")
-
 }
 
 private[spark] object SparkUI {

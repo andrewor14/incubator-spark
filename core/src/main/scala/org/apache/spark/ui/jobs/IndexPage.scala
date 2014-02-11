@@ -21,70 +21,90 @@ import javax.servlet.http.HttpServletRequest
 
 import scala.xml.{NodeSeq, Node}
 
-import org.apache.spark.scheduler.SchedulingMode
+import org.apache.spark.scheduler.{SchedulingMode, StageInfo}
 import org.apache.spark.ui.Page._
-import org.apache.spark.ui.UIUtils._
-
+import org.apache.spark.ui.UIUtils
+import net.liftweb.json.JsonDSL._
+import net.liftweb.json.JsonAST._
 
 /** Page showing list of all ongoing and recently finished stages and pools*/
 private[spark] class IndexPage(parent: JobProgressUI) {
-  def listener = parent.listener
+  private val listener = parent.listener
 
   def render(request: HttpServletRequest): Seq[Node] = {
+    val json = renderJson(request)
+    renderHTML(json)
+  }
+
+  def renderJson(request: HttpServletRequest): JValue = {
     listener.synchronized {
+      // Summary
       val activeStages = listener.activeStages.toSeq
-      val completedStages = listener.completedStages.reverse.toSeq
-      val failedStages = listener.failedStages.reverse.toSeq
-      val now = System.currentTimeMillis()
+      val completedStages = listener.completedStages.toSeq
+      val failedStages = listener.failedStages.toSeq
+      val totalDuration = parent.formatDuration(System.currentTimeMillis() - listener.sc.startTime)
+      val schedulingMode = parent.sc.getSchedulingMode.toString
 
-      var activeTime = 0L
-      for (tasks <- listener.stageIdToTasksActive.values; t <- tasks) {
-        activeTime += t.timeRunning(now)
-      }
+      // Stages
+      val activeStagesJson = StageTable.constructStagesJson(activeStages, parent)
+      val completedStagesJson = StageTable.constructStagesJson(completedStages, parent)
+      val failedStagesJson = StageTable.constructStagesJson(failedStages, parent)
 
-      val activeStagesTable = new StageTable(activeStages.sortBy(_.submissionTime).reverse, parent)
-      val completedStagesTable = new StageTable(completedStages.sortBy(_.submissionTime).reverse, parent)
-      val failedStagesTable = new StageTable(failedStages.sortBy(_.submissionTime).reverse, parent)
-
+      // Pools
       val pools = listener.sc.getAllPools
-      val poolTable = new PoolTable(pools, listener)
-      val summary: NodeSeq =
-       <div>
-         <ul class="unstyled">
-           <li>
-             <strong>Total Duration: </strong>
-             {parent.formatDuration(now - listener.sc.startTime)}
-           </li>
-           <li><strong>Scheduling Mode:</strong> {parent.sc.getSchedulingMode}</li>
-           <li>
-             <a href="#active"><strong>Active Stages:</strong></a>
-             {activeStages.size}
-           </li>
-           <li>
-             <a href="#completed"><strong>Completed Stages:</strong></a>
-             {completedStages.size}
-           </li>
-           <li>
-             <a href="#failed"><strong>Failed Stages:</strong></a>
-             {failedStages.size}
-           </li>
-         </ul>
-       </div>
+      val poolsJson = PoolTable.constructPoolsJson(pools, parent)
 
-      val content = summary ++
-        {if (listener.sc.getSchedulingMode == SchedulingMode.FAIR) {
-           <h4>{pools.size} Fair Scheduler Pools</h4> ++ poolTable.toNodeSeq
-        } else {
-          Seq()
-        }} ++
-        <h4 id="active">Active Stages ({activeStages.size})</h4> ++
-        activeStagesTable.toNodeSeq++
-        <h4 id="completed">Completed Stages ({completedStages.size})</h4> ++
-        completedStagesTable.toNodeSeq++
-        <h4 id ="failed">Failed Stages ({failedStages.size})</h4> ++
+      ("Total Duration" -> totalDuration) ~
+      ("Scheduling Mode" -> schedulingMode) ~
+      ("Active Stages" -> activeStagesJson) ~
+      ("Completed Stages" -> completedStagesJson) ~
+      ("Failed Stages" -> failedStagesJson) ~
+      ("Pools" -> poolsJson)
+    }
+  }
+
+  def renderHTML(json: JValue): Seq[Node] = {
+    // Summary
+    val totalDuration = UIUtils.deconstructJsonString(json, "Total Duration")
+    val schedulingMode = UIUtils.deconstructJsonString(json, "Scheduling Mode")
+
+    // Stages
+    val activeStages = UIUtils.deconstructJsonArrayAsMap(json, "Active Stages")
+    val completedStages = UIUtils.deconstructJsonArrayAsMap(json, "Completed Stages")
+    val failedStages = UIUtils.deconstructJsonArrayAsMap(json, "Failed Stages")
+    val isFairScheduler = schedulingMode == SchedulingMode.FAIR.toString
+    val activeStagesTable = new StageTable(activeStages, parent, isFairScheduler)
+    val completedStagesTable = new StageTable(completedStages, parent, isFairScheduler)
+    val failedStagesTable = new StageTable(failedStages, parent, isFairScheduler)
+
+    // Pools
+    val pools = UIUtils.deconstructJsonArrayAsMap(json, "Pools")
+    val poolTable = new PoolTable(pools)
+
+    val summary: NodeSeq =
+     <div>
+       <ul class="unstyled">
+         <li><strong>Total Duration: </strong>{totalDuration}</li>
+         <li><strong>Scheduling Mode: </strong>{schedulingMode}</li>
+         <li><a href="#active"><strong>Active Stages: </strong></a>{activeStages.size}</li>
+         <li><a href="#completed"><strong>Completed Stages:</strong></a>{completedStages.size}</li>
+         <li><a href="#failed"><strong>Failed Stages:</strong></a>{failedStages.size}</li>
+       </ul>
+     </div>
+
+    val content = summary ++
+      {if (isFairScheduler) {
+         <h4>{pools.size} Fair Scheduler Pools</h4> ++ poolTable.toNodeSeq
+      } else {
+        Seq()
+      }} ++
+      <h4 id="active">Active Stages ({activeStages.size})</h4> ++
+        activeStagesTable.toNodeSeq ++
+      <h4 id="completed">Completed Stages ({completedStages.size})</h4> ++
+        completedStagesTable.toNodeSeq ++
+      <h4 id ="failed">Failed Stages ({failedStages.size})</h4> ++
         failedStagesTable.toNodeSeq
 
-      headerSparkPage(content, parent.sc, "Spark Stages", Stages)
-    }
+    UIUtils.headerSparkPage(content, parent.sc, "Spark Stages", Stages)
   }
 }

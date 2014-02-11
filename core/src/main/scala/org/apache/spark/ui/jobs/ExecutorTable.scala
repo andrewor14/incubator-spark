@@ -18,14 +18,16 @@
 package org.apache.spark.ui.jobs
 
 import scala.xml.Node
+import scala.collection.mutable
 
 import org.apache.spark.scheduler.SchedulingMode
 import org.apache.spark.util.Utils
-import scala.collection.mutable
+
+import net.liftweb.json.JsonAST._
+import org.apache.spark.ui.UIUtils
 
 /** Page showing executor summary */
 private[spark] class ExecutorTable(val parent: JobProgressUI, val stageId: Int) {
-
   val listener = parent.listener
   val dateFmt = parent.dateFmt
   val isFairScheduler = listener.sc.getSchedulingMode == SchedulingMode.FAIR
@@ -37,7 +39,10 @@ private[spark] class ExecutorTable(val parent: JobProgressUI, val stageId: Int) 
   }
 
   /** Special table which merges two header cells. */
-  private def executorTable[T](): Seq[Node] = {
+  private def executorTable(): Seq[Node] = {
+
+    val executorTable =
+
     <table class="table table-bordered table-striped table-condensed sortable">
       <thead>
         <th>Executor ID</th>
@@ -57,7 +62,7 @@ private[spark] class ExecutorTable(val parent: JobProgressUI, val stageId: Int) 
     </table>
   }
 
-  private def createExecutorTable() : Seq[Node] = {
+  private def executorTable() : Seq[Node] = {
     // make a executor-id -> address map
     val executorIdToAddress = mutable.HashMap[String, String]()
     val storageStatusList = parent.sc.getExecutorStorageStatus
@@ -90,5 +95,58 @@ private[spark] class ExecutorTable(val parent: JobProgressUI, val stageId: Int) 
       }
       case _ => { Seq[Node]() }
     }
+  }
+}
+
+private[spark] object ExecutorTable {
+
+  def constructExecutorsJson(stageId: Int, ui: JobProgressUI): JValue = {
+    val executorIdToSummary = ui.listener.stageIdToExecutorSummaries.get(stageId).getOrElse {
+      return JNothing
+    }
+
+    // Maintain an executor-id -> address map
+    val executorIdToAddress = mutable.HashMap[String, String]()
+    val storageStatusList = ui.sc.getExecutorStorageStatus
+    for (statusId <- 0 until storageStatusList.size) {
+      val blockManagerId = ui.sc.getExecutorStorageStatus(statusId).blockManagerId
+      val address = blockManagerId.hostPort
+      val executorId = blockManagerId.executorId
+      executorIdToAddress.put(executorId, address)
+    }
+
+    val executorsJson = executorIdToSummary.toSeq.sortBy(_._1).map {
+      case (k, v) => {
+        val executorId = k
+        val address = executorIdToAddress.getOrElse(k, "CANNOT FIND ADDRESS")
+        val taskTime = ui.formatDuration(v.taskTime)
+        val failedTasks = v.failedTasks
+        val succeededTasks = v.succeededTasks
+        val shuffleRead = v.shuffleRead
+        val shuffleWrite = v.shuffleWrite
+        val memoryBytesSpilled = v.memoryBytesSpilled
+        val diskBytesSpilled = v.diskBytesSpilled
+
+        val executorFields = Seq("Executor ID", "Address", "Task Time", "Failed Tasks",
+          "Succeeded Tasks", "Shuffle Read", "Shuffle Write", "Shuffle Spill (Memory)",
+          "Shuffle Spill (Disk)")
+
+        UIUtils.constructJsonObject(
+          executorFields.zip(Seq(
+            executorId,
+            address,
+            taskTime,
+            failedTasks.toString,
+            succeededTasks.toString,
+            shuffleRead.toString,
+            shuffleWrite.toString,
+            memoryBytesSpilled.toString,
+            diskBytesSpilled.toString
+          ))
+        )
+      }
+    }
+
+    JArray(executorsJson.toList)
   }
 }

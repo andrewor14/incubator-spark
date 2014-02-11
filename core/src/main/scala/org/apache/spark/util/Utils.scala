@@ -40,7 +40,6 @@ import org.apache.spark.deploy.SparkHadoopUtil
 import java.nio.ByteBuffer
 import org.apache.spark.{SparkConf, SparkException, Logging}
 
-
 /**
  * Various utility methods used by Spark.
  */
@@ -852,5 +851,4 @@ private[spark] object Utils extends Logging {
     times(numIters)(f)
     System.currentTimeMillis - start
   }
-
 }

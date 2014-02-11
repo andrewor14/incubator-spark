@@ -17,31 +17,26 @@
 
 package org.apache.spark.ui.jobs
 
-import java.util.Date
-
 import scala.xml.Node
-import scala.collection.mutable.HashSet
 
-import org.apache.spark.scheduler.{SchedulingMode, StageInfo, TaskInfo}
 import org.apache.spark.ui.UIUtils
 import org.apache.spark.util.Utils
-
+import org.apache.spark.scheduler.{TaskInfo, StageInfo}
+import java.util.Date
+import scala.collection.mutable
+import net.liftweb.json.JsonAST._
 
 /** Page showing list of all ongoing and recently finished stages */
-private[spark] class StageTable(val stages: Seq[StageInfo], val parent: JobProgressUI) {
-
-  val listener = parent.listener
-  val dateFmt = parent.dateFmt
-  val isFairScheduler = listener.sc.getSchedulingMode == SchedulingMode.FAIR
+private[spark] class StageTable(stages: Seq[Map[String, String]],
+                                parent: JobProgressUI,
+                                isFairScheduler: Boolean) {
 
   def toNodeSeq(): Seq[Node] = {
-    listener.synchronized {
-      stageTable(stageRow, stages)
-    }
+    stageTable(stageRow, stages)
   }
 
   /** Special table which merges two header cells. */
-  private def stageTable[T](makeRow: T => Seq[Node], rows: Seq[T]): Seq[Node] = {
+  private def stageTable[T](makeRow: (T, Boolean) => Seq[Node], rows: Seq[T]): Seq[Node] = {
     <table class="table table-bordered table-striped table-condensed sortable">
       <thead>
         <th>Stage Id</th>
@@ -54,7 +49,7 @@ private[spark] class StageTable(val stages: Seq[StageInfo], val parent: JobProgr
         <th>Shuffle Write</th>
       </thead>
       <tbody>
-        {rows.map(r => makeRow(r))}
+        {rows.map(r => makeRow(r, isFairScheduler))}
       </tbody>
     </table>
   }
@@ -72,58 +67,108 @@ private[spark] class StageTable(val stages: Seq[StageInfo], val parent: JobProgr
     </div>
   }
 
+  private def stageRow(values: Map[String, String], isFairScheduler: Boolean): Seq[Node] = {
+    val stageId = values("Stage ID")
+    val poolName = values("Pool Name")
+    val nameLink = {
+      <a href={"%s/stages/stage?id=%s".format(UIUtils.prependBaseUri(),stageId)}>
+        {values("Stage Name")}
+      </a>
+    }
+    val description = values("description") match {
+      case "" => nameLink
+      case d => <div><em>{d}</em></div><div>{nameLink}</div>
+    }
+    val submissionTime = values("Submission Time")
+    val durationSortable = values("Duration")
+    val duration = durationSortable.toLong match {
+      case -1 => "Unknown"
+      case d => parent.formatDuration(d)
+    }
+    val progressBar = makeProgressBar(values("Started Tasks").toInt,
+      values("Completed Tasks").toInt, values("Failed Tasks"), values("Total Tasks").toInt)
+    val shuffleReadSortable = values("Shuffle Read")
+    val shuffleRead = shuffleReadSortable.toLong match {
+      case 0 => ""
+      case b => Utils.bytesToString(b)
+    }
+    val shuffleWriteSortable = values("Shuffle Write")
+    val shuffleWrite = shuffleWriteSortable.toLong match {
+      case 0 => ""
+      case b => Utils.bytesToString(b)
+    }
 
-  private def stageRow(s: StageInfo): Seq[Node] = {
+    <tr>
+      <td>{stageId}</td>
+      {if (isFairScheduler) {
+          <td>
+            <a href={"%s/stages/pool?poolname=%s".format(UIUtils.prependBaseUri(), poolName)}>
+              {poolName}
+            </a>
+          </td>
+      }}
+      <td>{description}</td>
+      <td valign="middle">{submissionTime}</td>
+      <td sorttable_customkey={durationSortable}>{duration}</td>
+      <td class="progress-cell">{progressBar}</td>
+      <td sorttable_customekey={shuffleReadSortable}>{shuffleRead}</td>
+      <td sorttable_customekey={shuffleWriteSortable}>{shuffleWrite}</td>
+    </tr>
+  }
+}
+
+private[spark] object StageTable {
+
+  /** Extract UI information from stage info */
+  def constructStageJson(s: StageInfo, ui: JobProgressUI): JValue = {
+    val listener = ui.listener
+    val stageId = s.stageId
+    val stageName = s.name
+    val poolName = listener.stageIdToPool(stageId)
+    val description = listener.stageIdToDescription(stageId)
     val submissionTime = s.submissionTime match {
-      case Some(t) => dateFmt.format(new Date(t))
+      case Some(t) => ui.dateFmt.format(new Date(t))
       case None => "Unknown"
     }
-
-    val shuffleReadSortable = listener.stageIdToShuffleRead.getOrElse(s.stageId, 0L)
-    val shuffleRead = shuffleReadSortable match {
-      case 0 => ""
-      case b => Utils.bytesToString(b)
-    }
-
-    val shuffleWriteSortable = listener.stageIdToShuffleWrite.getOrElse(s.stageId, 0L)
-    val shuffleWrite = shuffleWriteSortable match {
-      case 0 => ""
-      case b => Utils.bytesToString(b)
-    }
-
-    val startedTasks = listener.stageIdToTasksActive.getOrElse(s.stageId, HashSet[TaskInfo]()).size
-    val completedTasks = listener.stageIdToTasksComplete.getOrElse(s.stageId, 0)
-    val failedTasks = listener.stageIdToTasksFailed.getOrElse(s.stageId, 0) match {
-        case f if f > 0 => "(%s failed)".format(f)
-        case _ => ""
+    val finishTime = s.completionTime.getOrElse(System.currentTimeMillis())
+    val duration =  s.submissionTime.map(t => finishTime - t).getOrElse(-1)
+    val shuffleRead = listener.stageIdToShuffleRead.getOrElse(stageId, 0L)
+    val shuffleWrite = listener.stageIdToShuffleWrite.getOrElse(stageId, 0L)
+    val startedTasks = listener.stageIdToTasksActive.getOrElse(stageId,
+      mutable.HashSet[TaskInfo]()).size
+    val completedTasks = listener.stageIdToTasksComplete.getOrElse(stageId, 0)
+    val failedTasks = listener.stageIdToTasksFailed.getOrElse(stageId, 0) match {
+      case f if f > 0 => "(%s failed)".format(f)
+      case _ => ""
     }
     val totalTasks = s.numTasks
 
-    val poolName = listener.stageIdToPool.get(s.stageId)
+    val stageFields = Seq("Stage ID", "Stage Name", "Pool Name", "Description", "Submission Time",
+      "Duration", "Shuffle Read", "Shuffle Write", "Started Tasks", "Completed Tasks",
+      "Failed Tasks", "Total Tasks")
 
-    val nameLink =
-      <a href={"%s/stages/stage?id=%s".format(UIUtils.prependBaseUri(),s.stageId)}>{s.name}</a>
-    val description = listener.stageIdToDescription.get(s.stageId)
-      .map(d => <div><em>{d}</em></div><div>{nameLink}</div>).getOrElse(nameLink)
-    val finishTime = s.completionTime.getOrElse(System.currentTimeMillis())
-    val duration =  s.submissionTime.map(t => finishTime - t)
+    UIUtils.constructJsonObject(
+      stageFields.zip(Seq(
+        stageId.toString,
+        stageName,
+        poolName,
+        description,
+        submissionTime,
+        duration.toString,
+        shuffleRead.toString,
+        shuffleWrite.toString,
+        startedTasks.toString,
+        completedTasks.toString,
+        failedTasks.toString,
+        totalTasks.toString
+      ))
+    )
+  }
 
-    <tr>
-      <td>{s.stageId}</td>
-      {if (isFairScheduler) {
-        <td><a href={"%s/stages/pool?poolname=%s".format(UIUtils.prependBaseUri(),poolName.get)}>
-          {poolName.get}</a></td>}
-      }
-      <td>{description}</td>
-      <td valign="middle">{submissionTime}</td>
-      <td sorttable_customkey={duration.getOrElse(-1).toString}>
-        {duration.map(d => parent.formatDuration(d)).getOrElse("Unknown")}
-      </td>
-      <td class="progress-cell">
-        {makeProgressBar(startedTasks, completedTasks, failedTasks, totalTasks)}
-      </td>
-      <td sorttable_customekey={shuffleReadSortable.toString}>{shuffleRead}</td>
-      <td sorttable_customekey={shuffleWriteSortable.toString}>{shuffleWrite}</td>
-    </tr>
+  def constructStagesJson(stages: Seq[StageInfo], ui: JobProgressUI): JValue = {
+    val stagesJson = stages.sortBy(_.submissionTime).reverse.map { s =>
+      constructStageJson(s, ui)
+    }
+    JArray(stagesJson.toList)
   }
 }

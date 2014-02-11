@@ -24,7 +24,7 @@ import scala.xml.Node
 
 import org.eclipse.jetty.server.Handler
 
-import org.apache.spark.{ExceptionFailure, Logging, SparkContext}
+import org.apache.spark.{Logging, ExceptionFailure, SparkContext}
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler.{SparkListenerTaskStart, SparkListenerTaskEnd, SparkListener}
 import org.apache.spark.scheduler.TaskInfo
@@ -32,9 +32,10 @@ import org.apache.spark.ui.JettyUtils._
 import org.apache.spark.ui.Page.Executors
 import org.apache.spark.ui.UIUtils
 import org.apache.spark.util.Utils
+import net.liftweb.json.JsonDSL._
+import net.liftweb.json.JsonAST._
 
-
-private[spark] class ExecutorsUI(val sc: SparkContext) {
+private[spark] class ExecutorsUI(val sc: SparkContext) extends Logging {
 
   private var _listener: Option[ExecutorsListener] = None
   def listener = _listener.get
@@ -49,48 +50,40 @@ private[spark] class ExecutorsUI(val sc: SparkContext) {
   )
 
   def render(request: HttpServletRequest): Seq[Node] = {
-    val storageStatusList = sc.getExecutorStorageStatus
+    val json = renderJson(request)
+    renderHTML(json)
+  }
 
+  def renderJson(request: HttpServletRequest): JValue = {
+    val storageStatusList = sc.getExecutorStorageStatus
     val maxMem = storageStatusList.map(_.maxMem).fold(0L)(_+_)
     val memUsed = storageStatusList.map(_.memUsed()).fold(0L)(_+_)
     val diskSpaceUsed = storageStatusList.flatMap(_.blocks.values.map(_.diskSize)).fold(0L)(_+_)
-
-    val execHead = Seq("Executor ID", "Address", "RDD blocks", "Memory used", "Disk used",
-      "Active tasks", "Failed tasks", "Complete tasks", "Total tasks", "Task Time", "Shuffle Read",
-      "Shuffle Write")
-
-    def execRow(kv: Seq[String]) = {
-      <tr>
-        <td>{kv(0)}</td>
-        <td>{kv(1)}</td>
-        <td>{kv(2)}</td>
-        <td sorttable_customkey={kv(3)}>
-          {Utils.bytesToString(kv(3).toLong)} / {Utils.bytesToString(kv(4).toLong)}
-        </td>
-        <td sorttable_customkey={kv(5)}>
-          {Utils.bytesToString(kv(5).toLong)}
-        </td>
-        <td>{kv(6)}</td>
-        <td>{kv(7)}</td>
-        <td>{kv(8)}</td>
-        <td>{kv(9)}</td>
-        <td>{Utils.msDurationToString(kv(10).toLong)}</td>
-        <td>{Utils.bytesToString(kv(11).toLong)}</td>
-        <td>{Utils.bytesToString(kv(12).toLong)}</td>
-      </tr>
-    }
-
     val execInfo = for (statusId <- 0 until storageStatusList.size) yield getExecInfo(statusId)
-    val execTable = UIUtils.listingTable(execHead, execRow, execInfo)
+    val execInfoJson = JArray(execInfo.map(UIUtils.constructJsonObject).toList)
+
+    ("Memory Available" -> maxMem) ~
+    ("Memory Used" -> memUsed) ~
+    ("Disk Space Used" -> diskSpaceUsed) ~
+    ("Executor Information" -> execInfoJson)
+  }
+
+  def renderHTML(json: JValue): Seq[Node] = {
+    val maxMem = (json \ "Memory Available").asInstanceOf[JInt].num
+    val memUsed = (json \ "Memory Used").asInstanceOf[JInt].num
+    val diskSpaceUsed = (json \ "Disk Space Used").asInstanceOf[JInt].num
+    val execInfoJson = (json \ "Executor Information").asInstanceOf[JArray].arr
+    val execInfo = execInfoJson.map(UIUtils.deconstructJsonObjectAsMap)
+    val execTable = UIUtils.listingTable(execHeader, execRow, execInfo)
 
     val content =
       <div class="row-fluid">
         <div class="span12">
           <ul class="unstyled">
             <li><strong>Memory:</strong>
-              {Utils.bytesToString(memUsed)} Used
-              ({Utils.bytesToString(maxMem)} Total) </li>
-            <li><strong>Disk:</strong> {Utils.bytesToString(diskSpaceUsed)} Used </li>
+              {Utils.bytesToString(memUsed.toLong)} Used
+              ({Utils.bytesToString(maxMem.toLong)} Total) </li>
+            <li><strong>Disk:</strong> {Utils.bytesToString(diskSpaceUsed.toLong)} Used </li>
           </ul>
         </div>
       </div>
@@ -103,7 +96,33 @@ private[spark] class ExecutorsUI(val sc: SparkContext) {
     UIUtils.headerSparkPage(content, sc, "Executors (" + execInfo.size + ")", Executors)
   }
 
-  def getExecInfo(statusId: Int): Seq[String] = {
+  private def execHeader = Seq("Executor ID", "Address", "RDD Blocks", "Memory Used", "Disk Used",
+    "Active Tasks", "Failed Tasks", "Complete Tasks", "Total Tasks", "Task Time", "Shuffle Read",
+    "Shuffle Write")
+
+  private def execRow(values: Map[String, String]) = {
+    <tr>
+      <td>{values("Executor ID")}</td>
+      <td>{values("Address")}</td>
+      <td>{values("RDD Blocks")}</td>
+      <td sorttable_customkey={values("Memory Used")}>
+        {Utils.bytesToString(values("Memory Used").toLong)} /
+        {Utils.bytesToString(values("Memory Available").toLong)}
+      </td>
+      <td sorttable_customkey={values("Disk Used")}>
+        {Utils.bytesToString(values("Disk Used").toLong)}
+      </td>
+      <td>{values("Active Tasks")}</td>
+      <td>{values("Failed Tasks")}</td>
+      <td>{values("Complete Tasks")}</td>
+      <td>{values("Total Tasks")}</td>
+      <td>{Utils.msDurationToString(values("Task Time").toLong)}</td>
+      <td>{Utils.bytesToString(values("Shuffle Read").toLong)}</td>
+      <td>{Utils.bytesToString(values("Shuffle Write").toLong)}</td>
+    </tr>
+  }
+
+  private def getExecInfo(statusId: Int): Seq[(String, String)] = {
     val status = sc.getExecutorStorageStatus(statusId)
     val execId = status.blockManagerId.executorId
     val hostPort = status.blockManagerId.hostPort
@@ -119,7 +138,12 @@ private[spark] class ExecutorsUI(val sc: SparkContext) {
     val totalShuffleRead = listener.executorToShuffleRead.getOrElse(execId, 0)
     val totalShuffleWrite = listener.executorToShuffleWrite.getOrElse(execId, 0)
 
-    Seq(
+    // Not the same as execHead; this one has "Memory available"
+    val execFields = Seq("Executor ID", "Address", "RDD Blocks", "Memory Used", "Memory Available",
+      "Disk Used", "Active Tasks", "Failed Tasks", "Complete Tasks", "Total Tasks", "Task Time",
+      "Shuffle Read", "Shuffle Write")
+
+    execFields.zip(Seq(
       execId,
       hostPort,
       rddBlocks,
@@ -133,7 +157,7 @@ private[spark] class ExecutorsUI(val sc: SparkContext) {
       totalDuration.toString,
       totalShuffleRead.toString,
       totalShuffleWrite.toString
-    )
+    ))
   }
 
   private[spark] class ExecutorsListener extends SparkListener with Logging {

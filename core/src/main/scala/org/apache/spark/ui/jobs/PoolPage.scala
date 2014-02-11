@@ -19,31 +19,50 @@ package org.apache.spark.ui.jobs
 
 import javax.servlet.http.HttpServletRequest
 
-import scala.xml.{NodeSeq, Node}
-import scala.collection.mutable.HashSet
-
-import org.apache.spark.scheduler.Stage
-import org.apache.spark.ui.UIUtils._
+import scala.xml.Node
 import org.apache.spark.ui.Page._
+
+import net.liftweb.json.JsonDSL._
+import net.liftweb.json.JsonAST._
+import org.apache.spark.ui.UIUtils
+import org.apache.spark.scheduler.SchedulingMode
 
 /** Page showing specific pool details */
 private[spark] class PoolPage(parent: JobProgressUI) {
-  def listener = parent.listener
+  private val listener = parent.listener
 
   def render(request: HttpServletRequest): Seq[Node] = {
+    val json = renderJson(request)
+    renderHTML(json)
+  }
+
+  def renderJson(request: HttpServletRequest): JValue = {
     listener.synchronized {
       val poolName = request.getParameter("poolname")
-      val poolToActiveStages = listener.poolToActiveStages
-      val activeStages = poolToActiveStages.get(poolName).toSeq.flatten
-      val activeStagesTable = new StageTable(activeStages.sortBy(_.submissionTime).reverse, parent)
+      val schedulingMode = parent.sc.getSchedulingMode.toString
+      val activeStages = listener.poolToActiveStages.get(poolName).toSeq.flatten
+      val activeStagesJson = StageTable.constructStagesJson(activeStages, parent)
+      val pools = Seq(listener.sc.getPoolForName(poolName).get)
+      val poolsJson = PoolTable.constructPoolsJson(pools, parent)
 
-      val pool = listener.sc.getPoolForName(poolName).get
-      val poolTable = new PoolTable(Seq(pool), listener)
-
-      val content = <h4>Summary </h4> ++ poolTable.toNodeSeq() ++
-                    <h4>{activeStages.size} Active Stages</h4> ++ activeStagesTable.toNodeSeq()
-
-      headerSparkPage(content, parent.sc, "Fair Scheduler Pool: " + poolName, Stages)
+      ("Pool Name" -> poolName) ~
+      ("Scheduling Mode" -> schedulingMode) ~
+      ("Active Stages" -> activeStagesJson) ~
+      ("Pools" -> poolsJson)
     }
+  }
+
+  def renderHTML(json: JValue): Seq[Node] = {
+    val poolName = UIUtils.deconstructJsonString(json, "Pool Name")
+    val schedulingMode = UIUtils.deconstructJsonString(json, "Scheduling Mode")
+    val isFairScheduler = schedulingMode == SchedulingMode.FAIR.toString
+    val activeStages = UIUtils.deconstructJsonArrayAsMap(json, "Active Stages")
+    val activeStagesTable = new StageTable(activeStages, parent, isFairScheduler)
+    val pools = UIUtils.deconstructJsonArrayAsMap(json, "Pools")
+    val poolTable = new PoolTable(pools)
+
+    val content = <h4>Summary </h4> ++ poolTable.toNodeSeq() ++
+                  <h4>{activeStages.size} Active Stages</h4> ++ activeStagesTable.toNodeSeq()
+    UIUtils.headerSparkPage(content, parent.sc, "Fair Scheduler Pool: " + poolName, Stages)
   }
 }
