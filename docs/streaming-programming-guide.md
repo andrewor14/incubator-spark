@@ -428,9 +428,9 @@ KafkaUtils.createStream(javaStreamingContext, kafkaParams, ...);
 </div>
 </div>
 
-For more details on these additional sources, see the corresponding [API documentation]
-(http://kafka.apache.org/documentation.html). Furthermore, you can also implement your
-own custom receiver for your sources. See the [Custom Receiver Guide](streaming-custom-receivers.html).
+For more details on these additional sources, see the corresponding [API documentation](#where-to-go-from-here).
+Furthermore, you can also implement your own custom receiver for your sources. See the
+[Custom Receiver Guide](streaming-custom-receivers.html).
 
 ## Operations
 There are two kinds of DStream operations - _transformations_ and _output operations_. Similar to
@@ -520,9 +520,8 @@ The last two transformations are worth highlighting again.
 
 <h4>UpdateStateByKey Operation</h4>
 
-The `updateStateByKey` operation allows
-you to maintain arbitrary stateful computation; you may want to maintain some state data and
-continuously update it with new information. To use this, you will have to do two steps.
+The `updateStateByKey` operation allows you to maintain arbitrary state while continuously updating
+it with new information. To use this, you will have to do two steps.
 
 1. Define the state - The state can be of arbitrary data type.
 1. Define the state update function - Specify with a function how to update the state using the
@@ -1106,7 +1105,7 @@ explicitly deleted every time recompiled code needs to be launched.
 
 This failure recovery can be done automatically using Spark's
 [standalone cluster mode](spark-standalone.html), which allows the driver of any Spark application
-to be launched within the cluster and be restarted on failure. (see
+to be launched within the cluster and be restarted on failure (see
 [supervise mode](spark-standalone.html#launching-applications-inside-the-cluster)). This can be
 tested locally by launching the above example using the supervise mode in a
 local standalone cluster and killing the java process running the driver (will be shown as
