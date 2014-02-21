@@ -148,7 +148,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
   }
 
   /**
-   * Sort the existing contents of the in-memory map and spill them to a temporary file on disk
+   * Sort the existing contents of the in-memory map and spill them to a temporary file on disk.
    */
   private def spill(mapSize: Long) {
     spillCount += 1
@@ -329,13 +329,10 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
       def isEmpty = pairs.isEmpty
 
-      def minKeyHash: Int = {
-        if (pairs.length > 0){
-          // pairs are already sorted by key hash
-          pairs(0)._1.hashCode()
-        } else {
-          Int.MaxValue
-        }
+      def minKeyHash = {
+        // Invalid if there are no more pairs in this stream
+        assert(pairs.nonEmpty)
+        pairs.head._1.hashCode()
       }
 
       override def compareTo(other: StreamBuffer): Int = {
@@ -362,7 +359,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     private var objectsRead = 0
 
     /**
-     * Construct a stream that reads only from the next batch
+     * Construct a stream that reads only from the next batch.
      */
     private def nextBatchStream(): InputStream = {
       if (batchSizes.length > 0) {
