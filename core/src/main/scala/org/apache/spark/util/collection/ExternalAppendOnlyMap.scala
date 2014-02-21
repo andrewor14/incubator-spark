@@ -286,10 +286,10 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
      * input streams.
      */
     override def next(): (K, C) = {
-      // Select a key from the StreamBuffer that holds the lowest key hash
       if (mergeHeap.isEmpty) {
         throw new NoSuchElementException
       }
+      // Select a key from the StreamBuffer that holds the lowest key hash
       val minBuffer = mergeHeap.dequeue()
       val (minPairs, minHash) = (minBuffer.pairs, minBuffer.minKeyHash)
       var (minKey, minCombiner) = minPairs.remove(0)
@@ -329,8 +329,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
       def isEmpty = pairs.isEmpty
 
+      // Invalid if there are no more pairs in this stream
       def minKeyHash = {
-        // Invalid if there are no more pairs in this stream
         assert(pairs.nonEmpty)
         pairs.head._1.hashCode()
       }
