@@ -223,7 +223,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
    */
   private class ExternalIterator extends Iterator[(K, C)] {
 
-    // A fixed-size queue that maintains a buffer for each stream we are currently merging
+    // A queue that maintains a buffer for each stream we are currently merging
+    // This queue maintains the invariant that it only contains non-empty buffers
     private val mergeHeap = new mutable.PriorityQueue[StreamBuffer]
 
     // Input streams are derived both from the in-memory map and spilled maps on disk
@@ -233,7 +234,9 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
     inputStreams.foreach { it =>
       val kcPairs = getMorePairs(it)
-      mergeHeap.enqueue(StreamBuffer(it, kcPairs))
+      if (!kcPairs.isEmpty) {
+        mergeHeap.enqueue(new StreamBuffer(it, kcPairs))
+      }
     }
 
     /**
@@ -258,7 +261,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
     /**
      * If the given buffer contains a value for the given key, merge that value into
-     * baseCombiner and remove the corresponding (K, C) pair from the buffer
+     * baseCombiner and remove the corresponding (K, C) pair from the buffer.
      */
     private def mergeIfKeyExists(key: K, baseCombiner: C, buffer: StreamBuffer): C = {
       var i = 0
@@ -274,9 +277,9 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     }
 
     /**
-     * Return true if there exists an input stream that still has unvisited pairs
+     * Return true if there exists an input stream that still has unvisited pairs.
      */
-    override def hasNext: Boolean = mergeHeap.exists(!_.pairs.isEmpty)
+    override def hasNext: Boolean = !mergeHeap.isEmpty
 
     /**
      * Select a key with the minimum hash, then combine all values with the same key from all
@@ -284,12 +287,11 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
      */
     override def next(): (K, C) = {
       // Select a key from the StreamBuffer that holds the lowest key hash
-      val minBuffer = mergeHeap.dequeue()
-      val (minPairs, minHash) = (minBuffer.pairs, minBuffer.minKeyHash)
-      if (minPairs.length == 0) {
-        // Should only happen when no other stream buffers have any pairs left
+      if (mergeHeap.isEmpty) {
         throw new NoSuchElementException
       }
+      val minBuffer = mergeHeap.dequeue()
+      val (minPairs, minHash) = (minBuffer.pairs, minBuffer.minKeyHash)
       var (minKey, minCombiner) = minPairs.remove(0)
       assert(minKey.hashCode() == minHash)
 
@@ -302,12 +304,14 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
         mergedBuffers += newBuffer
       }
 
-      // Repopulate each visited stream buffer and add it back to the merge heap
+      // Repopulate each visited stream buffer and add it back to the queue if it is non-empty
       mergedBuffers.foreach { buffer =>
-        if (buffer.pairs.length == 0) {
+        if (buffer.isEmpty) {
           buffer.pairs ++= getMorePairs(buffer.iterator)
         }
-        mergeHeap.enqueue(buffer)
+        if (!buffer.isEmpty) {
+          mergeHeap.enqueue(buffer)
+        }
       }
 
       (minKey, minCombiner)
@@ -322,6 +326,8 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
      */
     private case class StreamBuffer(iterator: Iterator[(K, C)], pairs: ArrayBuffer[(K, C)])
       extends Comparable[StreamBuffer] {
+
+      def isEmpty = pairs.isEmpty
 
       def minKeyHash: Int = {
         if (pairs.length > 0){
