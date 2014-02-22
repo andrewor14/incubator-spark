@@ -234,7 +234,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
 
     inputStreams.foreach { it =>
       val kcPairs = getMorePairs(it)
-      if (!kcPairs.isEmpty) {
+      if (kcPairs.length > 0) {
         mergeHeap.enqueue(new StreamBuffer(it, kcPairs))
       }
     }
@@ -265,7 +265,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
      */
     private def mergeIfKeyExists(key: K, baseCombiner: C, buffer: StreamBuffer): C = {
       var i = 0
-      while (i < buffer.pairs.size) {
+      while (i < buffer.pairs.length) {
         val (k, c) = buffer.pairs(i)
         if (k == key) {
           buffer.pairs.remove(i)
@@ -279,14 +279,14 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     /**
      * Return true if there exists an input stream that still has unvisited pairs.
      */
-    override def hasNext: Boolean = !mergeHeap.isEmpty
+    override def hasNext: Boolean = mergeHeap.length > 0
 
     /**
      * Select a key with the minimum hash, then combine all values with the same key from all
      * input streams.
      */
     override def next(): (K, C) = {
-      if (mergeHeap.isEmpty) {
+      if (mergeHeap.length == 0) {
         throw new NoSuchElementException
       }
       // Select a key from the StreamBuffer that holds the lowest key hash
@@ -298,7 +298,7 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
       // For all other streams that may have this key (i.e. have the same minimum key hash),
       // merge in the corresponding value (if any) from that stream
       val mergedBuffers = ArrayBuffer[StreamBuffer](minBuffer)
-      while (!mergeHeap.isEmpty && mergeHeap.head.minKeyHash == minHash) {
+      while (mergeHeap.length > 0 && mergeHeap.head.minKeyHash == minHash) {
         val newBuffer = mergeHeap.dequeue()
         minCombiner = mergeIfKeyExists(minKey, minCombiner, newBuffer)
         mergedBuffers += newBuffer
@@ -327,11 +327,11 @@ private[spark] class ExternalAppendOnlyMap[K, V, C](
     private case class StreamBuffer(iterator: Iterator[(K, C)], pairs: ArrayBuffer[(K, C)])
       extends Comparable[StreamBuffer] {
 
-      def isEmpty = pairs.isEmpty
+      def isEmpty = pairs.length == 0
 
       // Invalid if there are no more pairs in this stream
       def minKeyHash = {
-        assert(pairs.nonEmpty)
+        assert(pairs.length > 0)
         pairs.head._1.hashCode()
       }
 
